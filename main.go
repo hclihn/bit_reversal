@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"math/bits"
+	"time"
 )
 
 const (
@@ -132,18 +133,21 @@ func ReverseBits(buf []byte) {
 }
 
 // use uint64 to reverse bytes from 1-8.
-func Reverse(buf []byte, start, length int) bool {
-	if length == 0 || length > 8 {
-		return false
+func Reverse(buf []byte, start, length uint) {
+	if length == 0 {
+		return
+	} else if length > 8 {
+		ReverseAllBits(buf)
+		return
 	}
 	// Inspired by math/bits/Reverse64()
 	// We are not using the lookup table approch from Reverse8() just to save some spaces
 	_ = buf[start+length-1] // bounds check hint to compiler
-	x := uint64(buf[start])
-	for i := 1; i < length; i++ { // pull bytes from buf
+	x := uint64(buf[start]) // pull bytes from buf
+	for i := uint(1); i < length; i++ { 
 		x = (x << 8) | uint64(buf[start+i])
 	}
-	switch length { // shift left to mkae it symmetric to the center of 46 bits
+	switch length { // shift left to mkae it symmetric to the center of 64 (for 5-7)/32 (for 3) bits
 	case 3, 7:
 		x <<= 4
 	case 6:
@@ -179,11 +183,12 @@ done:
 	case 5:
 		x >>= 12
 	}
-	for i := length-1; i >= 0; i-- { // put bytes back to buf
+	// push bytes back to buf reversed
+	for i := length-1; i > 0; i-- { // since i is uint, we need to separate the case for 0!
 		buf[start+i] = byte(x)
 		x >>= 8
 	}
-	return true
+	buf[start] = byte(x)
 }
 
 func ReverseAllBits(buf []byte) {
@@ -191,13 +196,13 @@ func ReverseAllBits(buf []byte) {
 	if l == 0 {
 		return
 	}
-	l2, next, end := l/2, 0, l
+	l2, next, end := uint(l/2), uint(0), uint(l)
 	if (end-next) > 15 { // reverse paris of 8-byte groups
 		for i := next; i < l2-8; i += 8 {
 			j := end - 8
 			Reverse(buf, i, 8)
 			Reverse(buf, j, 8)
-			for k := 0; k < 8; k++ {
+			for k := uint(0); k < 8; k++ {
 				buf[i+k], buf[j+k] = buf[j+k], buf[i+k]
 			} 
 			end -= 8
@@ -208,7 +213,7 @@ func ReverseAllBits(buf []byte) {
 		i, j := next, end - 4
 		Reverse(buf, i, 4)
 		Reverse(buf, j, 4)
-		for k := 0; k < 4; k++ {
+		for k := uint(0); k < 4; k++ {
 			buf[i+k], buf[j+k] = buf[j+k], buf[i+k]
 		} 
 		end -= 4
@@ -219,71 +224,50 @@ func ReverseAllBits(buf []byte) {
 	}
 }
 
+func testReverse(buf []byte) {
+	Reverse(buf, 0, uint(len(buf)))
+}
+
+func testFor(buf []byte, szs []int, name string, fn func([]byte)) {
+	failed := false
+	start := time.Now()
+	for _, sz := range szs {
+		fmt.Printf("** Reverse %d bytes using %s...\n", sz, name)
+		buf_1 := make([]byte, sz)
+		copy(buf_1, buf)
+		buf_2 := make([]byte, sz)
+		copy(buf_2, buf)
+		// create a reference
+		for i := 0; i < sz; i++ {
+			buf_2[i] = bits.Reverse8(buf[sz-i-1])
+		}
+		fmt.Printf("Original: %08b\n", buf_1)
+		fn(buf_1)
+		fmt.Printf("Reversed: %08b\n", buf_1)
+		fmt.Printf("Reversed (%d): %v\n", len(buf_1), bytes.Equal(buf_2, buf_1))
+		if !bytes.Equal(buf_2, buf_1) {
+			failed = true
+		}
+		fn(buf_1)
+		fmt.Printf("Reversed twice (%d): %v\n", len(buf_1), bytes.Equal(buf[:sz], buf_1))
+		for i := 0; i < len(buf_1); i++ {
+			if buf[i] != buf_1[i] {
+				fmt.Printf("-> buf[%d] = %08b vs buf_1[%d] = %08b\n", i, buf[i], i, buf_1[i])
+			}
+		}
+		if !bytes.Equal(buf[:sz], buf_1) {
+			failed = true
+		}
+		fmt.Println()
+	}
+	fmt.Printf("** %s Failed: %v, %s\n\n", name, failed, time.Since(start))
+}
+
 func main() {
 	buf := []byte{0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e}
   szs := []int{31, 30, 15, 14, 8, 7, 6, 5, 4, 3, 2, 1, 0}
 
-	failed := false
-	for _, sz := range szs {
-		fmt.Printf("Reverse %d bytes...\n", sz)
-		buf_1 := make([]byte, sz)
-		copy(buf_1, buf)
-		buf_2 := make([]byte, sz)
-		copy(buf_2, buf)
-		// create a reference
-		for i := 0; i < sz; i++ {
-			buf_2[i] = bits.Reverse8(buf[sz-i-1])
-		}
-		fmt.Printf("Original: %08b\n", buf_1)
-		ReverseBits(buf_1)
-		fmt.Printf("Reversed: %08b\n", buf_1)
-		fmt.Printf("Reversed (%d): %v\n", len(buf_1), bytes.Equal(buf_2, buf_1))
-		if !bytes.Equal(buf_2, buf_1) {
-			failed = true
-		}
-		ReverseBits(buf_1)
-		fmt.Printf("Reversed twice (%d): %v\n", len(buf_1), bytes.Equal(buf[:sz], buf_1))
-		for i := 0; i < len(buf_1); i++ {
-			if buf[i] != buf_1[i] {
-				fmt.Printf("-> buf[%d] = %08b vs buf_1[%d] = %08b\n", i, buf[i], i, buf_1[i])
-			}
-		}
-		if !bytes.Equal(buf[:sz], buf_1) {
-			failed = true
-		}
-		fmt.Println()
-	}
-	fmt.Printf("Failed: %v\n", failed)
-	fmt.Println()
-	failed = false
-	for _, sz := range szs {
-		fmt.Printf("** Reverse %d bytes...\n", sz)
-		buf_1 := make([]byte, sz)
-		copy(buf_1, buf)
-		buf_2 := make([]byte, sz)
-		copy(buf_2, buf)
-		// create a reference
-		for i := 0; i < sz; i++ {
-			buf_2[i] = bits.Reverse8(buf[sz-i-1])
-		}
-		fmt.Printf("Original: %08b\n", buf_1)
-		ReverseAllBits(buf_1)
-		fmt.Printf("Reversed: %08b\n", buf_1)
-		fmt.Printf("Reversed (%d): %v\n", len(buf_1), bytes.Equal(buf_2, buf_1))
-		if !bytes.Equal(buf_2, buf_1) {
-			failed = true
-		}
-		ReverseAllBits(buf_1)
-		fmt.Printf("Reversed twice (%d): %v\n", len(buf_1), bytes.Equal(buf[:sz], buf_1))
-		for i := 0; i < len(buf_1); i++ {
-			if buf[i] != buf_1[i] {
-				fmt.Printf("-> buf[%d] = %08b vs buf_1[%d] = %08b\n", i, buf[i], i, buf_1[i])
-			}
-		}
-		if !bytes.Equal(buf[:sz], buf_1) {
-			failed = true
-		}
-		fmt.Println()
-	}
-	fmt.Printf("Failed: %v\n", failed)
+	testFor(buf, szs, "ReverseBits", ReverseBits)
+	testFor(buf, szs, "ReverseAllBits", ReverseAllBits)
+	testFor(buf, szs, "Reverse", testReverse)
 }
