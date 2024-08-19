@@ -198,29 +198,43 @@ func ReverseAllBits(buf []byte) {
 	}
 	l2, next, end := uint(l/2), uint(0), uint(l)
 	if (end-next) > 15 { // reverse paris of 8-byte groups
-		for i := next; i < l2-8; i += 8 {
+		for i := next; i <= l2-8; i += 8 {
 			j := end - 8
 			Reverse(buf, i, 8)
 			Reverse(buf, j, 8)
-			for k := uint(0); k < 8; k++ {
+			for k := uint(0); k < 8; k++ { // swap the two groups
 				buf[i+k], buf[j+k] = buf[j+k], buf[i+k]
 			} 
 			end -= 8
 			next += 8
 		}
 	}
-	if (end-next) > 7 { // reverse a pair of 4-byte groups (length 8-15)
-		i, j := next, end - 4
-		Reverse(buf, i, 4)
-		Reverse(buf, j, 4)
-		for k := uint(0); k < 4; k++ {
-			buf[i+k], buf[j+k] = buf[j+k], buf[i+k]
+	if (end-next) > 8 { // lengths 9-15
+		// Break it into two halves, each less than 8 bytes.
+		// If end-next is even, we have the equal halves; otherwise, the first half is 1 byte longer.
+		fmt.Printf("reverse x2 %d\n", end-next)
+		r := (end-next) % 2 // remainder
+		i, j, l0 := next, (end+next+r)/2, (end-next)/2
+		Reverse(buf, i, l0+r)
+		Reverse(buf, j, l0)
+		for k := uint(0); k < l0; k++ { // swap the two halves
+			buf[i+r+k], buf[j+k] = buf[j+k], buf[i+r+k]
 		} 
-		end -= 4
-		next += 4
-	}
-	if (end-next) > 0 { // reverse the remaining bytes (length 1-7)
+		if r > 0 { // move the extra byte to the center
+			for k := i; k < i+l0; k++ {
+				buf[k], buf[k+1] = buf[k+1], buf[k]
+			}
+		}
+		end -= l0
+		next += l0+r
+	} else if end-next > 0 { // lengths 1-8
+		fmt.Printf("reverse x1 %d\n", end-next)
 		Reverse(buf, next, end-next)
+		next, end = l2, l2
+	}
+	// we should not get here!
+	if end-next > 0 {
+		panic("Reverse did not finish!")
 	}
 }
 
@@ -245,6 +259,11 @@ func testFor(buf []byte, szs []int, name string, fn func([]byte)) {
 		fn(buf_1)
 		fmt.Printf("Reversed: %08b\n", buf_1)
 		fmt.Printf("Reversed (%d): %v\n", len(buf_1), bytes.Equal(buf_2, buf_1))
+		for i := 0; i < len(buf_1); i++ {
+			if buf_2[i] != buf_1[i] {
+				fmt.Printf("-> buf_2[%d] = %08b vs buf_1[%d] = %08b\n", i, buf_2[i], i, buf_1[i])
+			}
+		}
 		if !bytes.Equal(buf_2, buf_1) {
 			failed = true
 		}
@@ -265,7 +284,7 @@ func testFor(buf []byte, szs []int, name string, fn func([]byte)) {
 
 func main() {
 	buf := []byte{0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e}
-  szs := []int{31, 30, 15, 14, 8, 7, 6, 5, 4, 3, 2, 1, 0}
+  szs := []int{31, 30, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0}
 
 	testFor(buf, szs, "ReverseBits", ReverseBits)
 	testFor(buf, szs, "ReverseAllBits", ReverseAllBits)
